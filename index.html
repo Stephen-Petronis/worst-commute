@@ -2537,7 +2537,7 @@
     "9":"111/101/111/001/110".split('/'), "?":"110/001/010/000/010".split('/'), ":":"000/010/000/010/000".split('/'),
     "-":"000/000/111/000/000".split('/'), "<":"001/010/100/010/001".split('/'), ">":"100/010/001/010/100".split('/')
   });
-  const CUT_BEFORE = { 1:["rail"], 2:["sign"], 3:["office"], 4:["office"] };
+  const CUT_BEFORE = { 1:["rail"], 2:["squish","sign"], 3:["office"], 4:["office"] };
   let cut = null;
 
   function cR(x, y, w, h, c){ bctx.fillStyle = c; bctx.fillRect(Math.round(x), Math.round(y), w, h); }
