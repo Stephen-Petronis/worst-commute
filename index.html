@@ -403,10 +403,15 @@
       if(state === "win") round++;
       startGame();
     } else if(state === "levelwin"){
-      state = "playing";
       overlay.classList.add('hidden');
-      lastTime = performance.now();
-      ensureLoop();
+      const ids = CUT_BEFORE[level];
+      if(ids){
+        startCuts(ids, ()=>{ state = "playing"; lastTime = performance.now(); ensureLoop(); });
+      } else {
+        state = "playing";
+        lastTime = performance.now();
+        ensureLoop();
+      }
     }
   });
 
@@ -2172,6 +2177,12 @@
     if(owTextTimer > 0) owTextTimer -= dt;
     updateParticles(dt);
     if(state === "playing" && level <= 2) commuteMs += dt;
+    if(state === "cutscene"){
+      updateCutscene(dt);
+      drawCutscene(now);
+      requestAnimationFrame(loop);
+      return;
+    }
 
     if(isRunner()){
       if(state === "playing") updateRunner(dt);
@@ -2514,6 +2525,328 @@
     }
   });
 
+
+  // =====================================================
+  //  8-BIT CUTSCENES
+  //  Drawn into the same 120x173 pixel buffer as the title, scaled 3x.
+  // =====================================================
+  Object.assign(FONT, {
+    "0":"111/101/101/101/111".split('/'), "1":"010/110/010/010/111".split('/'), "2":"110/001/010/100/111".split('/'),
+    "3":"110/001/010/001/110".split('/'), "4":"101/101/111/001/001".split('/'), "5":"111/100/110/001/110".split('/'),
+    "6":"011/100/110/101/010".split('/'), "7":"111/001/010/010/010".split('/'), "8":"111/101/111/101/111".split('/'),
+    "9":"111/101/111/001/110".split('/'), "?":"110/001/010/000/010".split('/'), ":":"000/010/000/010/000".split('/'),
+    "-":"000/000/111/000/000".split('/'), "<":"001/010/100/010/001".split('/'), ">":"100/010/001/010/100".split('/')
+  });
+  const CUT_BEFORE = { 1:["rail"], 2:["sign"], 3:["office"], 4:["office"] };
+  let cut = null;
+
+  function cR(x, y, w, h, c){ bctx.fillStyle = c; bctx.fillRect(Math.round(x), Math.round(y), w, h); }
+  function cTxt(str, x, y, col, sx){ bctx.fillStyle = col; eachPixel(str, Math.round(x), Math.round(y), sx||1, sx||1, (px,py)=>bctx.fillRect(px,py,sx||1,sx||1)); }
+  function cCap(lines){
+    cR(0, 150, BW, 23, "#05040c"); cR(0, 150, BW, 1, "#6a5acd");
+    lines.forEach((l, i)=>{ if(l) drawText(l, 154 + i*9, 1, 1, i ? "#ffe9a8" : "#ffffff", null, "#000"); });
+  }
+  const easeIO = (p)=> p < 0 ? 0 : p > 1 ? 1 : p*p*(3-2*p);
+  const cl01 = (p)=> Math.max(0, Math.min(1, p));
+
+  const jhCache = {};
+  function jasonHead(sz, flip){
+    const key = sz + (flip ? "f" : "n");
+    if(!jhCache[key] || !jhCache[key].ok){
+      const c = document.createElement('canvas'); c.width = c.height = sz;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+      if(flip){ g.translate(sz, 0); g.scale(-1, 1); }
+      g.drawImage(spriteFrames[0], 0, 0, sz, sz);
+      c.ok = spriteFrames[0].complete;
+      jhCache[key] = c;
+    }
+    return jhCache[key];
+  }
+  function jFigure(cx, topY, o){
+    o = o || {};
+    const hs = 20;
+    bctx.imageSmoothingEnabled = false;
+    const by = Math.round(topY) + hs - 2;
+    if(o.armsUp){
+      cR(cx-10, by-9, 3, 12, "#2b3350"); cR(cx+7, by-9, 3, 12, "#2b3350");
+      cR(cx-10, by-11, 3, 3, "#f1c9a0"); cR(cx+7, by-11, 3, 3, "#f1c9a0");
+    } else {
+      cR(cx-7, by+1, 2, 9, "#2b3350"); cR(cx+5, by+1, 2, 9, "#2b3350");
+    }
+    cR(cx-5, by, 10, 10, "#e8eefc"); cR(cx-1, by, 2, 8, "#d33");
+    cR(cx-5, by+10, 10, 1, "#111");
+    const sw = o.leg ? 1 : 0;
+    cR(cx-4, by+11, 3, 7 - sw, "#232838"); cR(cx+1, by+11, 3, 6 + sw, "#232838");
+    cR(cx-5, by+17 - sw, 4, 2, "#111"); cR(cx+1, by+16 + sw, 4, 2, "#111");
+    bctx.drawImage(jasonHead(hs, o.flip), Math.round(cx - hs/2), Math.round(topY));
+  }
+  const SKINS = ["#f1c9a0","#d9a066","#a8714a","#7a4b2c","#f6d7b5"];
+  const HAIRS = ["#1a1410","#3a2a1a","#6b4a2a","#b8a070","#8a8a90","#222"];
+  const SHIRTS = ["#3b5ea8","#a83b3b","#3b8a5a","#8a5aa8","#d9a23a","#5a5a66","#2a7a8a","#c46a2a"];
+  function crowdPerson(x, feetY, seed, bob){
+    const y = Math.round(feetY + bob);
+    cR(x, y-10, 8, 10, SHIRTS[Math.floor(hn(seed+1)*SHIRTS.length)]);
+    cR(x+1, y-16, 6, 6, SKINS[Math.floor(hn(seed+2)*SKINS.length)]);
+    cR(x+1, y-17, 6, 2, HAIRS[Math.floor(hn(seed+3)*HAIRS.length)]);
+    cR(x+2, y-14, 1, 1, "#111"); cR(x+5, y-14, 1, 1, "#111");
+  }
+
+  // ---------- 1. sliding down the subway railing past a huge crowd ----------
+  function cutRail(t){
+    cR(0, 0, BW, BH, "#0d1c26");
+    for(let y=0; y<BH; y+=8) cR(0, y, BW, 1, "#12303d");
+    for(let x=0; x<BW; x+=12) cR(x, 0, 1, BH, "#102833");
+    // street light at the top of the stairs
+    const fl = 0.75 + 0.25*Math.sin(t/200);
+    disc(10, 8, 26, "#183648");
+    disc(10, 8, 18, "#2a5a70");
+    cTxt("SUBWAY", 4, 4, "#35c46a", 1);
+    disc(20, 20, 4, "#35c46a"); disc(20, 20, 2, "#c8ffd8");
+    // staircase (down to the right)
+    for(let i=0; i<16; i++){
+      const sx = i*8, sy = sx + 50;
+      cR(sx, sy, 8, 3, "#6a7180"); cR(sx, sy+3, 8, 130, "#2f3440");
+    }
+    // back row of the crowd, then the front row
+    for(let i=0; i<16; i++){
+      const sx = i*8, sy = sx + 50;
+      crowdPerson(sx+5, sy-3, i*5+1, Math.sin(t/230 + i)*1);
+    }
+    cR(0, 0, 0, 0, "#000");
+    bctx.fillStyle = "rgba(0,0,0,0.35)"; for(let i=0;i<16;i++){ bctx.fillRect(i*8+5, i*8+50-20, 8, 20); }
+    for(let i=0; i<16; i++){
+      const sx = i*8, sy = sx + 50;
+      crowdPerson(sx, sy+1, i*5+77, Math.sin(t/190 + i*1.7)*1.2);
+    }
+    // the railing (green, with posts)
+    for(let x=0; x<BW; x++){ cR(x, x+19, 1, 3, "#2f9d5a"); cR(x, x+19, 1, 1, "#7fe3a0"); }
+    for(let x=6; x<BW; x+=16){ cR(x, x+22, 2, 20, "#1f6e3e"); }
+    // Jason slides: starts slow, whoosh at the end
+    const p = cl01((t - 600)/4400);
+    const jx = 8 + 104*Math.pow(p, 1.7);
+    const ry = jx + 19;
+    if(p > 0 && p < 1){
+      for(let k=1;k<8;k++){
+        if(hn(k*7 + Math.floor(t/60)) > 0.35) cR(jx - k*4 - 4, ry - 1 + Math.floor(hn(k+Math.floor(t/50))*3), 2, 1, k%2 ? "#ffe14a" : "#ffffff");
+      }
+    }
+    const wob = Math.sin(t/60) * 1;
+    // legs dangling on the crowd side, torso sitting on the rail
+    cR(jx-3, ry-1, 4, 10, "#232838"); cR(jx+1, ry+1, 4, 9, "#232838"); cR(jx-3, ry+9, 4, 2, "#111"); cR(jx+1, ry+10, 4, 2, "#111");
+    cR(jx-5, ry-12, 10, 12, "#e8eefc"); cR(jx-1, ry-12, 2, 9, "#d33");
+    cR(jx-10, ry-24 + wob, 3, 13, "#2b3350"); cR(jx+7, ry-24 - wob, 3, 13, "#2b3350");
+    cR(jx-10, ry-27 + wob, 3, 3, "#f1c9a0"); cR(jx+7, ry-27 - wob, 3, 3, "#f1c9a0");
+    bctx.drawImage(jasonHead(20, false), Math.round(jx-10), Math.round(ry-30));
+    if(p > 0.35){ cTxt("WHEEE!", Math.min(70, jx - 34), Math.max(8, ry - 44), "#ffe14a", 1); }
+    cCap(t < 2400 ? ["THE STAIRS ARE PACKED.", ""] : ["THE STAIRS ARE PACKED.", "SO JASON TOOK THE RAILING."]);
+  }
+
+  // ---------- 2. squished into a train, Tetris style ----------
+  const TET_COL = ["#00e5e5","#f2d800","#b04ad8","#3ec84a","#e84040","#4a6cf0","#f09020"];
+  function tCell(gx, gy, c, face){
+    const x = 10 + gx*10, y = 12 + gy*10;
+    cR(x, y, 10, 10, c); cR(x, y, 10, 1, "rgba(255,255,255,0.55)"); cR(x, y, 1, 10, "rgba(255,255,255,0.4)");
+    cR(x, y+9, 10, 1, "rgba(0,0,0,0.45)"); cR(x+9, y, 1, 10, "rgba(0,0,0,0.35)");
+    if(face){ cR(x+2, y+3, 2, 2, "#111"); cR(x+6, y+3, 2, 2, "#111"); cR(x+3, y+7, 4, 1, "#411"); }
+  }
+  const PIECES = [
+    { cells:[[0,7],[1,7],[2,7],[1,6]], col:2, t0:0 },
+    { cells:[[3,7],[3,6],[2,6],[2,5]], col:3, t0:450 },
+    { cells:[[6,7],[7,7],[8,7],[7,6]], col:5, t0:900 },
+    { cells:[[9,7],[9,6],[8,6],[8,5]], col:4, t0:1350 }
+  ];
+  function cutSquish(t){
+    cR(0, 0, BW, BH, "#1a1c28");
+    cR(4, 6, 112, 146, "#8a93a3"); cR(4, 6, 112, 3, "#b7bfcc"); cR(4, 120+30, 112, 2, "#1f5fa8");
+    cR(10, 12, 100, 140, "#07070e");
+    for(let gx=1; gx<10; gx++) cR(10+gx*10, 12, 1, 140, "#10101c");
+    for(let gy=1; gy<14; gy++) cR(10, 12+gy*10, 100, 1, "#10101c");
+    // the crowd already packed in (rows 8-13), with a 2-wide shaft left
+    for(let r=8; r<=13; r++){
+      for(let c=0; c<10; c++){
+        if((c === 4 || c === 5) && r < 13) continue;
+        tCell(c, r, TET_COL[Math.floor(hn(c*3 + r*11)*7)], hn(c + r*13) > 0.45);
+      }
+    }
+    // commuters tumble in as tetrominoes
+    for(const pc of PIECES){
+      const p = cl01((t - pc.t0)/600);
+      const off = (1 - easeIO(p)) * -9;
+      for(const [cx, cy] of pc.cells) tCell(cx, cy + off, TET_COL[pc.col], true);
+    }
+    // Jason: a 2x2 block with his face, falls down the shaft and gets squashed
+    const fall = cl01((t - 2400)/800);
+    const gy = -2 + fall*fall*13;      // lands at row 11
+    const landed = t > 3200;
+    let sq = 1;
+    if(landed){ const q = (t - 3200)/500; sq = 0.62 + 0.3*Math.max(0, Math.cos(q*9))*Math.exp(-q*3); }
+    const bx = 10 + 4*10, by = 12 + gy*10 + (landed ? 20*(1 - sq) : 0);
+    if(t > 2300){
+      cR(bx, by, 20, 20*sq, "#f09020"); cR(bx, by, 20, 1, "rgba(255,255,255,0.6)"); cR(bx, by + 20*sq - 1, 20, 1, "rgba(0,0,0,0.5)");
+      bctx.drawImage(jasonHead(20, false), bx, Math.round(by + 20*(1-sq)*0.0), 20, Math.max(8, Math.round(20*sq)));
+    }
+    if(landed && t < 3700){ for(let k=0;k<6;k++) cR(bx + 10 + Math.cos(k*1.05 + t/90)*16, by + 10 + Math.sin(k*1.05 + t/90)*10, 2, 2, "#ffe14a"); }
+    if(t > 3900){ cTxt("NEXT", 78, 4, "#9ecbff", 1); }
+    cCap(t < 2300 ? ["NO ROOM ON THE TRAIN.", ""] : t < 3300 ? ["NO ROOM ON THE TRAIN.", "JASON MAKES ROOM."] : ["SQUISHED.", "TETRIS STYLE."]);
+  }
+
+  // ---------- 3. the transfer sign: every line, every color ----------
+  const LINE_COL = { "1":"#ee352e","2":"#ee352e","3":"#ee352e","4":"#00933c","5":"#00933c","6":"#00933c","7":"#b933ad","S":"#808183",
+    "A":"#0039a6","C":"#0039a6","E":"#0039a6","B":"#ff6319","D":"#ff6319","F":"#ff6319","M":"#ff6319","G":"#6cbe45",
+    "J":"#996633","Z":"#996633","L":"#a7a9ac","N":"#fccc0a","Q":"#fccc0a","R":"#fccc0a","W":"#fccc0a","?":"#555" };
+  const SIGN_ROWS = ["1234567S", "ACEBDFMG", "JZLNQRW?"];
+  function cutSign(t){
+    cR(0, 0, BW, BH, "#cfc9b8");
+    for(let x=0; x<BW; x+=10) cR(x, 0, 1, 118, "#bdb7a4");
+    for(let y=0; y<118; y+=8) cR(0, y, BW, 1, "#bdb7a4");
+    cR(0, 100, BW, 4, "#2a2a30"); cR(0, 104, BW, 69, "#4a4850");
+    for(let x=0; x<BW; x+=16) cR(x, 104, 1, 69, "#3a3840");
+    // hanging sign
+    cR(30, 0, 2, 12, "#222"); cR(88, 0, 2, 12, "#222");
+    cR(4, 10, 112, 84, "#fff"); cR(6, 12, 108, 80, "#111");
+    drawText("TRANSFER", 15, 2, 2, "#ffffff", null, null);
+    SIGN_ROWS.forEach((row, ri)=>{
+      const n = row.length, x0 = Math.round(60 - n*13/2);
+      for(let i=0;i<n;i++){
+        const ch = row[i], cx = x0 + i*13 + 6, cy = 38 + ri*14;
+        const flick = hn(i*5 + ri*17 + Math.floor(t/140)) > 0.93;
+        disc(cx, cy, 6, flick ? "#ffffff" : "#000");
+        disc(cx, cy, 5, flick ? "#fff" : LINE_COL[ch]);
+        const tc = (ch === "N" || ch === "Q" || ch === "R" || ch === "W" || ch === "L") ? "#111" : "#fff";
+        cTxt(ch, cx - 1, cy - 2, tc, 1);
+      }
+    });
+    cR(10, 76, 100, 1, "#444");
+    // arrows: look left? look right?
+    const phase = t < 4800 ? Math.floor(t / (t < 2400 ? 1000 : 600)) % 2 : 2;   // 0 left, 1 right
+    cTxt("< UPTOWN", 9, 80, phase === 0 ? "#ffe14a" : "#888", 1);
+    cTxt("DOWNTOWN >", 61, 80, phase === 1 ? "#ffe14a" : "#888", 1);
+    // Jason, head whipping left and right
+    const jx = phase === 0 ? 40 : phase === 1 ? 80 : 60;
+    const shake = phase === 2 ? Math.sin(t/45)*1.5 : 0;
+    jFigure(jx + shake, 112 + (phase === 2 ? 3 : 0), { flip: phase === 1, leg: Math.floor(t/200)%2 });
+    if(t > 600){
+      const q = Math.floor(t/260)%2;
+      cTxt("?", jx - 14 + (phase===1?28:0), 106 - q*2, "#111", 2);
+      if(t > 2400) cTxt("?", jx + 10 - (phase===1?20:0), 100 + q*2, "#111", 2);
+    }
+    if(phase === 2){ cTxt("?!", 52, 100, "#d33", 3); cR(48, 138, 2, 3, "#6cf"); cR(70, 134, 2, 3, "#6cf"); }
+    cCap(t < 2400 ? ["TRANSFER TO WHAT?", ""] : t < 4800 ? ["EVERY LINE. EVERY COLOR.", "WHICH WAY?"] : ["JASON PICKS A RING.", "ANY RING."]);
+  }
+
+  // ---------- 4. the office goes on forever (tilt up, forced perspective) ----------
+  function cutOffice(t){
+    const p = easeIO(cl01((t - 500)/5600));
+    const vx = 60, vy = 38 + 88*p, k = 78;
+    const tz = t * 0.0011;
+    // ceiling and floor
+    cR(0, 0, BW, Math.max(0, vy), "#141a38");
+    cR(0, vy, BW, BH - vy, "#3a4260");
+    const N = 34;
+    // far-to-near slabs
+    for(let i=N-1; i>=0; i--){
+      let z = ((i - tz) % N + N) % N + 0.9;
+      const z2 = z + 0.62;
+      const fog = Math.min(1, z/26);
+      const mix = (a, b)=> Math.round(a + (b-a)*fog);
+      // floor stripes
+      const fy = vy + 1.0*k/z, fy2 = vy + 1.0*k/z2;
+      if(fy < BH + 4 && fy2 < fy){
+        cR(0, Math.round(fy2), BW, Math.max(1, Math.round(fy - fy2)), i%2 ? `rgb(${mix(70,30)},${mix(78,34)},${mix(104,52)})` : `rgb(${mix(52,28)},${mix(58,32)},${mix(84,50)})`);
+      }
+      // cubicle walls both sides
+      for(const side of [-1, 1]){
+        const sx1 = vx + side*1.15*k/z, sx2 = vx + side*1.15*k/z2;
+        const top = vy - 0.95*k/z, bot = vy + 1.0*k/z;
+        const xl = Math.round(Math.min(sx1, sx2)), w = Math.max(1, Math.round(Math.abs(sx1 - sx2)));
+        const base = i%2 ? [150,160,190] : [130,140,172];
+        cR(xl, Math.round(top), w, Math.max(1, Math.round(bot - top)), `rgb(${mix(base[0],24)},${mix(base[1],30)},${mix(base[2],62)})`);
+        // monitor + sticky note on the near ones
+        if(z < 14){
+          const mw = Math.max(1, Math.round(0.55*k/z/1.4));
+          const mx = Math.round(vx + side*1.1*k/z) - (side > 0 ? mw : 0);
+          cR(mx, Math.round(vy + 0.25*k/z), mw, Math.max(1, Math.round(0.4*k/z/1.5)), hn(i*3)>0.5 ? "#6fb4ff" : "#9fe6a0");
+        }
+      }
+      // ceiling lights (bright strips, three rows)
+      const cy = vy - 1.7*k/z, cy2 = vy - 1.7*k/z2;
+      if(cy > -4 && cy < BH){
+        if(z < 1.8) continue;
+        for(const lx of [-0.5, 0.5]){
+          const a = vx + (lx-0.16)*k/z, b = vx + (lx+0.16)*k/z;
+          cR(Math.round(a), Math.round(Math.min(cy, cy2)), Math.max(1, Math.round(b - a)), Math.max(1, Math.round(Math.abs(cy - cy2))), fog > 0.85 ? "#8a90b8" : "#e8e0b0");
+        }
+      }
+    }
+    // the infinite vanishing glow
+    if(vy > -6 && vy < BH + 6){ disc(vx, Math.round(vy), 3, "#ffffff"); disc(vx, Math.round(vy), 6, "rgba(255,246,200,0.25)"); }
+    // Jason walking away from us, then drifting out of frame as the camera tilts up
+    const jy = 126 + 72*p;
+    if(jy < BH + 6){
+      const walk = Math.floor(t/180)%2;
+      cR(52, jy+14, 4, 8 - walk, "#232838"); cR(64, jy+14, 4, 7 + walk, "#232838");
+      cR(48, jy, 24, 16, "#2b3350"); cR(46, jy+1, 3, 12, "#2b3350"); cR(71, jy+1, 3, 12, "#2b3350");
+      cR(52, jy-14, 16, 15, "#15151c"); cR(50, jy-8, 3, 5, "#d9a066"); cR(67, jy-8, 3, 5, "#d9a066");
+    }
+    // clock in the sky
+    if(p > 0.6){ cR(40, 8, 40, 16, "#05040c"); cTxt("9:00", 46, 12, "#ff5a5a", 2); }
+    cCap(t < 2600 ? ["THE OFFICE.", ""] : ["THE OFFICE.", "IT NEVER ENDS."]);
+  }
+
+  const CUTS = {
+    rail:{ dur:6600, draw:cutRail, sfx:[[0, ()=>blip(220, 900, 0.9, "sawtooth", 0.05)], [3600, ()=>blip(900, 250, 0.7, "sawtooth", 0.05)]] },
+    squish:{ dur:5600, draw:cutSquish, sfx:[[0,()=>blip(180,140,0.1,"square",0.1)],[450,()=>blip(180,140,0.1,"square",0.1)],[900,()=>blip(180,140,0.1,"square",0.1)],[1350,()=>blip(180,140,0.1,"square",0.1)],[2400,()=>blip(900,200,0.8,"square",0.08)],[3200,()=>blip(160,60,0.35,"sawtooth",0.18)]] },
+    sign:{ dur:6800, draw:cutSign, sfx:[[1000,()=>blip(500,300,0.08,"square",0.1)],[2000,()=>blip(500,300,0.08,"square",0.1)],[3000,()=>blip(520,320,0.08,"square",0.1)],[3600,()=>blip(540,340,0.08,"square",0.1)],[4200,()=>blip(560,360,0.08,"square",0.1)],[4800,()=>blip(300,600,0.3,"square",0.1)]] },
+    office:{ dur:7400, draw:cutOffice, sfx:[[300,()=>blip(120, 700, 5.2, "triangle", 0.07)]] }
+  };
+
+  function startCuts(ids, then){
+    cut = { ids, i:0, t:0, then, fired:{} };
+    state = "cutscene";
+    overlay.classList.add('hidden');
+    lastTime = performance.now();
+    ensureLoop();
+  }
+  function skipCut(){
+    if(state !== "cutscene" || !cut) return;
+    cut.i++; cut.t = 0; cut.fired = {};
+    if(cut.i >= cut.ids.length){
+      const fn = cut.then; cut = null;
+      state = "playing";
+      lastTime = performance.now();
+      if(fn) fn();
+    }
+  }
+  function updateCutscene(dt){
+    cut.t += dt;
+    const def = CUTS[cut.ids[cut.i]];
+    def.sfx.forEach((s, n)=>{ if(cut.t >= s[0] && !cut.fired[n]){ cut.fired[n] = true; try{ s[1](); }catch(e){} } });
+    if(cut.t >= def.dur) skipCut();
+  }
+  function drawCutscene(now){
+    if(!cut) return;
+    const def = CUTS[cut.ids[cut.i]];
+    bctx.imageSmoothingEnabled = false;
+    bctx.fillStyle = "#000"; bctx.fillRect(0, 0, BW, BH);
+    def.draw(cut.t);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(buf, 0, 0, BW, BH, 0, 0, W, H);
+    ctx.fillStyle = "rgba(0,0,0,0.13)";
+    for(let y=2; y<H; y+=3) ctx.fillRect(0, y, W, 1);
+    const fade = Math.min(cut.t/350, (def.dur - cut.t)/350, 1);
+    if(fade < 1){ ctx.fillStyle = "rgba(0,0,0," + (1 - Math.max(0, fade)) + ")"; ctx.fillRect(0, 0, W, H); }
+    if(Math.floor(now/500) % 2 === 0){
+      ctx.font = "bold 10px monospace"; ctx.textAlign = "right"; ctx.fillStyle = "#c9b8ff";
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+      ctx.strokeText("TAP TO SKIP ▶▶", 352, 40); ctx.fillText("TAP TO SKIP ▶▶", 352, 40);
+      ctx.textAlign = "start";
+    }
+  }
+  canvas.addEventListener('click', skipCut);
+  window.addEventListener('keydown', (e)=>{
+    if(state === "cutscene" && (e.key === "Enter" || e.key === " " || e.key.startsWith("Arrow"))){ e.preventDefault(); skipCut(); }
+  });
 
   // =====================================================
   //  STAGE 1 BACKDROP: Brooklyn Borough Hall + the subway entrance
