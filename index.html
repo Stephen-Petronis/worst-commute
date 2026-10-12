@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <title>The Worst Commute</title>
+<meta property="og:title" content="The Worst Commute">
+<meta property="og:description" content="Jason just wants to get to work. An 8-bit commute through the streets, the subway, the transfer and the office.">
+<meta property="og:image" content="https://stephen-petronis.github.io/worst-commute/social.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
   :root{
@@ -101,6 +105,13 @@
     touch-action:manipulation;
   }
   #controls .pad:active{ background:linear-gradient(180deg,#2b3442,#1c2330); transform:translateY(1px); }
+  .side{ position:fixed; top:0; bottom:0; width:min(320px, calc(50vw - 230px)); display:none; pointer-events:none; }
+  #sideLwrap{ right:calc(50% + 215px); }
+  #sideRwrap{ left:calc(50% + 215px); }
+  .side canvas.sidecv{ width:100%; height:100%; object-fit:cover; image-rendering:pixelated; background:transparent; }
+  #sideLwrap{ -webkit-mask-image:linear-gradient(to right, transparent 0, #000 60px); mask-image:linear-gradient(to right, transparent 0, #000 60px); }
+  #sideRwrap{ -webkit-mask-image:linear-gradient(to left, transparent 0, #000 60px); mask-image:linear-gradient(to left, transparent 0, #000 60px); }
+  @media (min-width: 780px) and (min-height: 560px){ .side{ display:block; } }
   .hidden{ display:none !important; }
   #footer{ font-size:clamp(0.6rem, 2.6vw, 0.7rem); opacity:0.4; margin-top:8px; text-align:center; padding:0 8px; }
 
@@ -112,6 +123,8 @@
 </style>
 </head>
 <body>
+<aside class="side" id="sideLwrap"><canvas class="sidecv" id="sideL" width="72" height="216"></canvas></aside>
+<aside class="side" id="sideRwrap"><canvas class="sidecv" id="sideR" width="72" height="216"></canvas></aside>
 
 <h1>🚶 THE WORST COMMUTE 🏢</h1>
 <div id="sub">Get Jason to the Borough Hall subway. Dodge buses, Ubers, pizza bikes, trains and people. Arrow keys / WASD or swipe.</div>
@@ -3285,6 +3298,116 @@
   }
 
   // boot: set up level data behind the scenes, then show the title
+  // =====================================================
+  //  SIDE PANEL ART (desktop only): left = street & subway, right = the tower
+  // =====================================================
+  const PW = 72, PH = 216;
+  const panelL = document.getElementById('sideL'), panelR = document.getElementById('sideR');
+  function pFill(g, x, y, w, h, c){ g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), w, h); }
+  function pTxt(g, str, x, y, c){ g.fillStyle = c; eachPixel(str, Math.round(x), Math.round(y), 1, 1, (px,py)=>g.fillRect(px,py,1,1)); }
+  function pDisc(g, cx, cy, r, c){ g.fillStyle = c; for(let y=-r; y<=r; y++){ const hw = Math.floor(Math.sqrt(r*r - y*y)); g.fillRect(cx-hw, cy+y, hw*2+1, 1); } }
+
+  function drawPanelLeft(g, t){
+    // dawn sky bands
+    const bands = ["#2b3a70","#4a5890","#7568a6","#a679a8","#d78ca0","#f5a58f","#ffcf9a"];
+    bands.forEach((c, i)=> pFill(g, 0, i*14, PW, 14, c));
+    for(let i=0;i<8;i++){ if(hn(i+31) > 0.3) pFill(g, Math.floor(hn(i+5)*PW), Math.floor(hn(i+9)*34), 1, 1, (Math.floor(t/500 + i) % 3) ? "#e8e4ff" : "#8f87c8"); }
+    pDisc(g, 36, 84, 17, "#f2a38e"); pDisc(g, 36, 84, 13, "#ffc096"); pDisc(g, 36, 84, 9, "#ffe0a4"); pDisc(g, 36, 84, 5, "#fff4cf");
+    pTxt(g, "6:42 AM", 36 - Math.floor(textWidth("6:42 AM", 1)/2), 5, "#fff6cf");
+    // Borough Hall: wide base with columns, clock tower, cupola
+    pFill(g, 2, 92, 68, 28, "#5a3d63");
+    pFill(g, 2, 92, 68, 2, "#7b5a82");
+    for(let x=6; x<68; x+=6) pFill(g, x, 98, 2, 22, "#7b5a82");
+    pFill(g, 26, 52, 20, 42, "#4a3354"); pFill(g, 26, 52, 20, 2, "#7b5a82");
+    pFill(g, 29, 36, 14, 18, "#563a60"); pFill(g, 32, 28, 8, 10, "#4a3354"); pFill(g, 35, 20, 2, 9, "#4a3354");
+    pFill(g, 36, 18, 5, 2, "#d9544d");
+    pDisc(g, 36, 62, 6, "#f4ecd8"); pFill(g, 36, 57, 1, 5, "#2a1f30"); pFill(g, 36, 62, 4, 1, "#2a1f30");
+    for(let wy=70; wy<92; wy+=6) for(let wx=29; wx<43; wx+=5) pFill(g, wx, wy, 2, 3, hn(wx*3+wy) > 0.5 ? "#ffd98a" : "#2a1f30");
+    for(let wy=100; wy<118; wy+=7) for(let wx=9; wx<64; wx+=12) pFill(g, wx, wy, 3, 4, hn(wx+wy*3) > 0.6 ? "#ffd98a" : "#2a1f30");
+    // street
+    pFill(g, 0, 120, PW, 62, "#33323f"); pFill(g, 0, 120, PW, 2, "#4d4b5c");
+    for(let x=-((t/40)%12|0); x<PW; x+=12){ pFill(g, x, 148, 6, 1, "#c9c3a0"); pFill(g, x, 170, 6, 1, "#c9c3a0"); }
+    // M14 bus (steady)
+    const bx = ((t*0.022) % (PW + 60)) - 50;
+    pFill(g, bx, 126, 42, 15, "#e8eef8"); pFill(g, bx, 126, 42, 2, "#9ab0d4"); pFill(g, bx, 136, 42, 3, "#1f5fa8");
+    for(let i=0;i<6;i++) pFill(g, bx + 3 + i*6, 129, 4, 4, "#4d6b8a");
+    pFill(g, bx + 36, 129, 5, 8, "#4d6b8a");
+    pTxt(g, "M14", bx + 14, 142, "#0a0e1c");
+    pFill(g, bx + 4, 141, 6, 3, "#111"); pFill(g, bx + 30, 141, 6, 3, "#111");
+    // Uber XXL (stop and go)
+    const ph = (t % 4200);
+    const ux = ph < 1800 ? 8 : ph < 2400 ? 8 + (ph - 1800)*0.002 : 8 + 1.2 + (ph - 2400)*0.036;
+    const uxx = ux % (PW + 40) - 6;
+    pFill(g, uxx, 154, 26, 8, "#15151c"); pFill(g, uxx + 5, 150, 15, 5, "#222230"); pFill(g, uxx + 7, 151, 11, 3, "#4d6b8a");
+    pFill(g, uxx + 3, 161, 5, 3, "#000"); pFill(g, uxx + 18, 161, 5, 3, "#000");
+    if(ph < 1800) pFill(g, uxx - 1, 156, 2, 2, "#ff3b3b");
+    // pizza cyclist (fast and steady)
+    const cx = ((t*0.05) % (PW + 40)) - 30;
+    pFill(g, cx, 172, 3, 3, "#000"); pFill(g, cx + 11, 172, 3, 3, "#000"); pFill(g, cx + 3, 170, 8, 1, "#aaa");
+    pFill(g, cx + 5, 163, 4, 7, "#d9544d"); pFill(g, cx + 5, 160, 4, 3, "#f1c9a0"); pFill(g, cx + 9, 164, 5, 5, "#f2c94c"); pFill(g, cx + 11, 166, 1, 1, "#d33");
+    // sidewalk + subway entrance
+    pFill(g, 0, 182, PW, 34, "#5a566a"); pFill(g, 0, 182, PW, 2, "#7a768a");
+    pFill(g, 8, 186, 2, 18, "#2f9d5a"); pFill(g, 62, 186, 2, 18, "#2f9d5a");
+    const glow = 0.6 + 0.4*Math.sin(t/260);
+    pDisc(g, 9, 185, 3, "#35c46a"); pDisc(g, 63, 185, 3, "#35c46a");
+    g.globalAlpha = glow*0.5; pDisc(g, 9, 185, 6, "#7dffb0"); pDisc(g, 63, 185, 6, "#7dffb0"); g.globalAlpha = 1;
+    pFill(g, 12, 196, 48, 20, "#15131c");
+    for(let i=0;i<6;i++){ pFill(g, 12 + i*2, 196 + i*3, 48 - i*4, 2, "#3a3848"); }
+    for(let i=0;i<9;i++){
+      const hx = 14 + i*5, hy = 200 + (i%3)*4 + Math.round(Math.sin(t/300 + i)*1);
+      pFill(g, hx, hy, 4, 4, ["#f1c9a0","#d9a066","#a8714a","#7a4b2c"][i%4]); pFill(g, hx, hy - 1, 4, 2, ["#1a1410","#3a2a1a","#b8a070"][i%3]);
+    }
+    pTxt(g, "SUBWAY", 36 - Math.floor(textWidth("SUBWAY", 1)/2), 188, "#7dffb0");
+  }
+
+  function drawPanelRight(g, t){
+    const bands = ["#0b0820","#150c35","#21104a","#33165c","#4d1b66","#6e2268","#972d66"];
+    bands.forEach((c, i)=> pFill(g, 0, i*14, PW, 14, c));
+    for(let i=0;i<14;i++) pFill(g, Math.floor(hn(i+61)*PW), Math.floor(hn(i+81)*60), 1, 1, (Math.floor(t/600 + i) % 3) ? "#fff" : "#8f7fc4");
+    // the tower
+    pFill(g, 10, 24, 52, 192, "#2a3560"); pFill(g, 10, 24, 52, 2, "#5a6aa8");
+    pFill(g, 6, 40, 4, 176, "#1a2240"); pFill(g, 62, 40, 4, 176, "#1a2240");
+    pFill(g, 34, 6, 4, 18, "#8a90b8");
+    if(Math.floor(t/600) % 2 === 0) pDisc(g, 36, 5, 2, "#ff3b3b");
+    for(let r=0; r<19; r++){
+      for(let c=0; c<7; c++){
+        const wx = 13 + c*7, wy = 30 + r*9;
+        const lit = hn(r*7 + c + 3) > 0.45;
+        const flick = hn(r*13 + c*5 + Math.floor(t/1200)) > 0.96;
+        pFill(g, wx, wy, 5, 6, (lit !== flick) ? "#ffd98a" : "#141a38");
+      }
+    }
+    // clock sign
+    pFill(g, 20, 14, 32, 11, "#05040c");
+    const colon = Math.floor(t/500) % 2 === 0;
+    pTxt(g, colon ? "9:00 AM" : "9 00 AM", 36 - Math.floor(textWidth("9:00 AM", 1)/2), 17, "#ff5a5a");
+    // the boss in a window, red tie
+    pFill(g, 34, 66, 5, 6, "#ffd98a"); pFill(g, 35, 66, 3, 6, "#2a1f30"); pFill(g, 36, 68, 1, 3, "#e22");
+    // lobby doors
+    pFill(g, 24, 190, 24, 26, "#0a0e1c"); pFill(g, 26, 192, 20, 24, "#ffd98a"); pFill(g, 35, 192, 2, 24, "#8a6a30");
+    pFill(g, 22, 187, 28, 3, "#c0c8e0");
+    // floating loot: laptop, coffee, snack
+    if(!MS) buildMazeSprites();
+    const bob = (i)=> Math.round(Math.sin(t/300 + i*2)*2);
+    g.drawImage(MS.laptop, 1, 150 + bob(0));
+    g.drawImage(MS.coffee, 61, 134 + bob(1));
+    g.drawImage(MS.snack, 1, 118 + bob(2));
+    g.drawImage(MS.paper, 61, 168 + bob(3));
+    // Jason peeking out of the entrance
+    g.imageSmoothingEnabled = true;
+    g.drawImage(spriteFrames[0], 28, 168, 16, 16);
+    g.imageSmoothingEnabled = false;
+    pFill(g, 26, 184, 20, 3, "#0a0e1c");
+  }
+  const pgL = panelL ? panelL.getContext('2d') : null, pgR = panelR ? panelR.getContext('2d') : null;
+  function drawPanels(){
+    const t = performance.now();
+    if(pgL){ pgL.imageSmoothingEnabled = false; drawPanelLeft(pgL, t); }
+    if(pgR){ pgR.imageSmoothingEnabled = false; drawPanelRight(pgR, t); }
+  }
+  setInterval(()=>{ if(panelL && panelL.offsetParent !== null) drawPanels(); }, 120);
+  window.__drawPanels = drawPanels;
+
   bhScene = makeBoroughHall();
   initLevel(0);
   resetPlayerPosition();
