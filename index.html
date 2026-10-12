@@ -162,6 +162,9 @@
     { name: "The Transfer \u00b7 7:03 AM", bg: "#1b1a22", laneType: "rings",
       winTitle: "Transfer complete.",
       winText: "Jason crossed all five rings and reached the exit stairs. Now for the office lobby." },
+    { name: "The Lobby \u00b7 8:52 AM", bg: "#1c1a24", laneType: "stealth",
+      winTitle: "Slipped past the boss.",
+      winText: "Jason made it to the elevator without being seen. Next stop: the cubicle floor." },
     { name: "The Office \u00b7 8:57 AM", bg: "#20242e", laneType: "maze" },
     { name: "The Lobby \u00b7 Late", bg: "#20241f", laneType: "crowd" }
   ];
@@ -249,8 +252,11 @@
     if(isRunner()) initRunner();
     if(isRings()) initRings();
     if(isMaze()) initMaze();
+    if(isStealth()) initStealth();
     const ft = document.getElementById('footer');
-    if(ft) ft.textContent = isMaze()
+    if(ft) ft.textContent = isStealth()
+      ? "Arrow keys, WASD or the pad to move (hold to keep walking). Hide behind pillars. Don't let the boss see you."
+      : isMaze()
       ? "Arrow keys or swipe to move. Grab laptop, coffee and snack, then reach the WC. Don't get caught by coworkers."
       : isRings()
       ? "Ride a ring until a car lines up, then hop in with \u25b2 (\u25bc hops back out). \u25c0 \u25b6 shifts you in your car. Green = go, red X = gap."
@@ -286,7 +292,7 @@
 
   function buildObstacles(type){
     const list = [];
-    if(type === "runner" || type === "rings" || type === "maze") return list;
+    if(type === "runner" || type === "rings" || type === "maze" || type === "stealth") return list;
     // rows 1..ROWS-2 are hazard lanes; row 0 = goal (desk), row ROWS-1 = start sidewalk
     const firstLane = type === "street" ? 3 : 1;   // street stage: rows 0-2 are the Borough Hall plaza
     for(let r = firstLane; r < ROWS - 1; r++){
@@ -330,6 +336,7 @@
   function startGame(){
     lives = 5;
     commuteMs = 0;
+    hurt = 0;
     livesLabel.textContent = "❤️".repeat(lives);
     initLevel(0);
     resetPlayerPosition();
@@ -349,7 +356,7 @@
   }
 
   function loseLife(){
-    lives--;
+    lives--; hurt++;
     flashTimer = 300;
     owTextTimer = 500;
     playHitSound();
@@ -363,6 +370,7 @@
     }
   }
 
+  let pendingCuts = null;
   function nextLevel(){
     playWinSound();
     const lt = LEVELS[level].laneType;
@@ -379,14 +387,21 @@
     let nxt = level + 1;
     let title = LEVELS[level].winTitle || "Made it. Barely.";
     let text = LEVELS[level].winText || "One obstacle down. It does not get easier from here.";
-    if(lt === "rings"){
+    pendingCuts = null;
+    if(lt === "street") pendingCuts = ["rail"];
+    else if(lt === "runner") pendingCuts = ["sign"];
+    else if(lt === "rings"){
+      pendingCuts = ["office"];
       const left = COMMUTE_LIMIT - commuteMs;
       if(left >= 0){
-        nxt = 3;
+        const banged = hurt >= HURT_LIMIT;
+        nxt = banged ? 3 : 4;
         title = "Transfer complete. On time!";
-        text = "Jason beat the 9:00 deadline with " + mmss(left) + " to spare. That earns the good ending: grab his laptop, coffee and snack, then reach the bathroom without getting caught by coworkers.";
+        text = "Jason beat the 9:00 deadline with " + mmss(left) + " to spare. " + (banged
+          ? "But he took " + hurt + " hits on the way and looks like a wreck. The boss is prowling the lobby. Sneak to the elevator without being seen."
+          : "That earns the good ending: grab his laptop, coffee and snack, then reach the bathroom without getting caught by coworkers.");
       } else {
-        nxt = 4;
+        nxt = 5;
         title = "Transfer complete. You're late.";
         text = "Jason missed the 9:00 deadline by " + mmss(-left) + ". Now he has to push through the lobby mob while everyone watches.";
       }
@@ -404,7 +419,7 @@
       startGame();
     } else if(state === "levelwin"){
       overlay.classList.add('hidden');
-      const ids = CUT_BEFORE[level];
+      const ids = pendingCuts; pendingCuts = null;
       if(ids){
         startCuts(ids, ()=>{ state = "playing"; lastTime = performance.now(); ensureLoop(); });
       } else {
@@ -417,6 +432,10 @@
 
   function tryMove(dr, dc){
     if(state !== "playing") return;
+    if(isStealth()){
+      if(SL && performance.now() > SL.padUntil) SL.tap = [dc, dr];
+      return;
+    }
     if(isMaze()){ mzWant(dc, dr); return; }
     if(isRings()){
       if(dr !== 0) ringHop(dr);
@@ -1040,7 +1059,7 @@
     stroller:["Whoa!","Ow!"], crazy:["Whoa!","Hey!"]
   };
   function runnerHit(o){
-    lives--;
+    lives--; hurt++;
     R.inv = 1400; R.slow = 350;
     flashTimer = 300;
     const arr = HIT_WORDS[o.kind] || ["Ow!"];
@@ -1084,7 +1103,7 @@
     if(b.t > 0 && Math.floor(b.t/350) !== Math.floor(Math.max(0,before)/350)) blip(700 + 300*boardDoor(), undefined, 0.05, "square", 0.07);
     if(b.t >= 2200){
       b.failT = 900;
-      lives--;
+      lives--; hurt++;
       flashTimer = 300;
       playHitSound("Whoa!");
       R.texts.push({ word:"DOORS CLOSED!", t:0, x:RUN.PX + 40, y:R.y - 60 });
@@ -1506,7 +1525,7 @@
   }
 
   function ringsHit(reason){
-    lives--;
+    lives--; hurt++;
     flashTimer = 300;
     const gap = reason === "gap";
     const show = gap ? "MIND THE GAP!" : "TOO PACKED!";
@@ -1927,7 +1946,7 @@
   }
 
   function mzCaught(g){
-    lives--;
+    lives--; hurt++;
     flashTimer = 300;
     playHitSound("Ugh!");
     const p = mzXY(M.P.c + (M.P.nc-M.P.c)*M.P.p, M.P.r + (M.P.nr-M.P.r)*M.P.p);
@@ -2187,6 +2206,9 @@
     if(isRunner()){
       if(state === "playing") updateRunner(dt);
       drawRunnerScene(now);
+    } else if(isStealth()){
+      if(state === "playing") updateStealth(dt);
+      drawStealthScene(now);
     } else if(isMaze()){
       if(state === "playing") updateMaze(dt);
       drawMazeScene(now);
@@ -2735,63 +2757,68 @@
     cCap(t < 2400 ? ["TRANSFER TO WHAT?", ""] : t < 4800 ? ["EVERY LINE. EVERY COLOR.", "WHICH WAY?"] : ["JASON PICKS A RING.", "ANY RING."]);
   }
 
-  // ---------- 4. the office goes on forever (tilt up, forced perspective) ----------
+  // ---------- 4. pan up the endless office tower ----------
   function cutOffice(t){
-    const p = easeIO(cl01((t - 500)/5600));
-    const vx = 60, vy = 38 + 88*p, k = 78;
-    const tz = t * 0.0011;
-    // ceiling and floor
-    cR(0, 0, BW, Math.max(0, vy), "#141a38");
-    cR(0, vy, BW, BH - vy, "#3a4260");
-    const N = 34;
-    // far-to-near slabs
-    for(let i=N-1; i>=0; i--){
-      let z = ((i - tz) % N + N) % N + 0.9;
-      const z2 = z + 0.62;
-      const fog = Math.min(1, z/26);
-      const mix = (a, b)=> Math.round(a + (b-a)*fog);
-      // floor stripes
-      const fy = vy + 1.0*k/z, fy2 = vy + 1.0*k/z2;
-      if(fy < BH + 4 && fy2 < fy){
-        cR(0, Math.round(fy2), BW, Math.max(1, Math.round(fy - fy2)), i%2 ? `rgb(${mix(70,30)},${mix(78,34)},${mix(104,52)})` : `rgb(${mix(52,28)},${mix(58,32)},${mix(84,50)})`);
+    const p = easeIO(cl01((t - 400)/6400));
+    const yg = 150 + 190*p, yv = -12 + 58*p, cexp = 0.11;
+    const Y = (u)=> yg - (yg - yv)*(1 - Math.exp(-cexp*u));
+    // dawn sky
+    for(let y=0; y<BH; y++){
+      const idx = Math.max(0, Math.min(SKY.length-1, Math.floor((y - (yv - 125))/12)));
+      cR(0, y, BW, 1, SKY[idx]);
+    }
+    for(let i=0;i<14;i++){ if(hn(i+3) > 0.3) cR(Math.floor(hn(i+20)*BW), Math.floor(hn(i+40)*Math.max(1, yv-6)), 1, 1, "#fff"); }
+    // drifting clouds above the roofline
+    for(let i=0;i<5;i++){
+      const cx = ((hn(i+7)*200 + t*0.012*(1+i*0.4)) % 170) - 25, cy = yv - 10 - hn(i+13)*40;
+      if(cy > 2){ cR(cx, cy, 26, 3, "#e9d6ff"); cR(cx+4, cy-2, 16, 2, "#f6ecff"); cR(cx+8, cy+3, 18, 2, "#caa9e8"); }
+    }
+    // neighbouring towers in the dark
+    for(let y=Math.max(0, Math.floor(yv)); y<BH; y++){
+      const hw = 0.34*(y - yv);
+      cR(0, y, Math.max(0, 60 - hw), 1, "#0c0e1e");
+      cR(60 + hw, y, BW, 1, "#0c0e1e");
+    }
+    for(let i=0;i<40;i++){
+      const wx = Math.floor(hn(i)*BW), wy = Math.floor(yv + 6 + hn(i+50)*(BH - yv));
+      if(Math.abs(wx - 60) > 0.34*(wy - yv) + 3 && hn(i+90) > 0.45) cR(wx, wy, 2, 2, "#ffd98a");
+    }
+    // the tower: faint gradient + window grid with foreshortened floors
+    for(let y=Math.max(0, Math.floor(yv)); y<BH; y++){
+      const hw = 0.34*(y - yv);
+      const f = Math.min(1, (y - yv)/200);
+      cR(60 - hw, y, Math.max(1, Math.round(hw*2)), 1, `rgb(${Math.round(46 + 30*f)},${Math.round(58 + 34*f)},${Math.round(104 + 40*f)})`);
+    }
+    for(let j=0; j<90; j++){
+      const ya = Y(j), yb = Y(j+1);
+      if(ya < 0) break;
+      if(yb > BH) continue;
+      const ym = (ya + yb)/2, hw = 0.34*(ym - yv);
+      if(hw < 2) continue;
+      const NC = 7, cell = (2*hw)/NC, hgt = Math.max(1, Math.round((ya - yb)*0.62));
+      for(let k=0; k<NC; k++){
+        const lit = hn(j*13 + k*7 + 1) > 0.52;
+        cR(Math.round(60 - hw + k*cell + 1), Math.round(yb + (ya - yb)*0.2), Math.max(1, Math.round(cell - 2)), hgt, lit ? "#ffd98a" : (hn(j+k*3) > 0.5 ? "#1a2240" : "#222c52"));
       }
-      // cubicle walls both sides
-      for(const side of [-1, 1]){
-        const sx1 = vx + side*1.15*k/z, sx2 = vx + side*1.15*k/z2;
-        const top = vy - 0.95*k/z, bot = vy + 1.0*k/z;
-        const xl = Math.round(Math.min(sx1, sx2)), w = Math.max(1, Math.round(Math.abs(sx1 - sx2)));
-        const base = i%2 ? [150,160,190] : [130,140,172];
-        cR(xl, Math.round(top), w, Math.max(1, Math.round(bot - top)), `rgb(${mix(base[0],24)},${mix(base[1],30)},${mix(base[2],62)})`);
-        // monitor + sticky note on the near ones
-        if(z < 14){
-          const mw = Math.max(1, Math.round(0.55*k/z/1.4));
-          const mx = Math.round(vx + side*1.1*k/z) - (side > 0 ? mw : 0);
-          cR(mx, Math.round(vy + 0.25*k/z), mw, Math.max(1, Math.round(0.4*k/z/1.5)), hn(i*3)>0.5 ? "#6fb4ff" : "#9fe6a0");
-        }
-      }
-      // ceiling lights (bright strips, three rows)
-      const cy = vy - 1.7*k/z, cy2 = vy - 1.7*k/z2;
-      if(cy > -4 && cy < BH){
-        if(z < 1.8) continue;
-        for(const lx of [-0.5, 0.5]){
-          const a = vx + (lx-0.16)*k/z, b = vx + (lx+0.16)*k/z;
-          cR(Math.round(a), Math.round(Math.min(cy, cy2)), Math.max(1, Math.round(b - a)), Math.max(1, Math.round(Math.abs(cy - cy2))), fog > 0.85 ? "#8a90b8" : "#e8e0b0");
-        }
+      cR(Math.round(60 - hw), Math.round(ya), Math.round(hw*2), 1, "#2a3560");
+    }
+    // street level: sidewalk, big glass doors, tiny Jason walking in
+    if(yg < BH){
+      cR(0, Math.round(yg), BW, BH - Math.round(yg), "#2c2c40");
+      cR(0, Math.round(yg), BW, 2, "#4a4a62");
+      const dx0 = 46, dh = 30;
+      cR(dx0, Math.round(yg) - dh, 28, dh, "#0a0e1c"); cR(dx0 + 2, Math.round(yg) - dh + 2, 24, dh - 2, "#ffd98a");
+      cR(dx0 + 13, Math.round(yg) - dh + 2, 2, dh - 2, "#8a6a30");
+      cR(dx0 - 2, Math.round(yg) - dh - 3, 32, 3, "#c0c8e0");
+      if(t < 2300){
+        const jx = 6 + 44*cl01(t/2000), top = Math.round(yg) - 22, leg = Math.floor(t/150)%2;
+        cR(jx + 2, top + 18, 3, 5 - leg, "#232838"); cR(jx + 6, top + 18, 3, 4 + leg, "#232838");
+        cR(jx + 1, top + 10, 9, 9, "#e8eefc"); cR(jx + 5, top + 10, 1, 7, "#d33");
+        bctx.drawImage(jasonHead(12, false), Math.round(jx - 0.5), top - 2);
       }
     }
-    // the infinite vanishing glow
-    if(vy > -6 && vy < BH + 6){ disc(vx, Math.round(vy), 3, "#ffffff"); disc(vx, Math.round(vy), 6, "rgba(255,246,200,0.25)"); }
-    // Jason walking away from us, then drifting out of frame as the camera tilts up
-    const jy = 126 + 72*p;
-    if(jy < BH + 6){
-      const walk = Math.floor(t/180)%2;
-      cR(52, jy+14, 4, 8 - walk, "#232838"); cR(64, jy+14, 4, 7 + walk, "#232838");
-      cR(48, jy, 24, 16, "#2b3350"); cR(46, jy+1, 3, 12, "#2b3350"); cR(71, jy+1, 3, 12, "#2b3350");
-      cR(52, jy-14, 16, 15, "#15151c"); cR(50, jy-8, 3, 5, "#d9a066"); cR(67, jy-8, 3, 5, "#d9a066");
-    }
-    // clock in the sky
-    if(p > 0.6){ cR(40, 8, 40, 16, "#05040c"); cTxt("9:00", 46, 12, "#ff5a5a", 2); }
-    cCap(t < 2600 ? ["THE OFFICE.", ""] : ["THE OFFICE.", "IT NEVER ENDS."]);
+    if(p > 0.55){ cR(40, 8, 40, 16, "#05040c"); cTxt("9:00", 46, 12, "#ff5a5a", 2); }
+    cCap(t < 2600 ? ["THE OFFICE.", ""] : ["THE OFFICE.", "IT GOES UP FOREVER."]);
   }
 
   const CUTS = {
@@ -2846,6 +2873,337 @@
   canvas.addEventListener('click', skipCut);
   window.addEventListener('keydown', (e)=>{
     if(state === "cutscene" && (e.key === "Enter" || e.key === " " || e.key.startsWith("Arrow"))){ e.preventDefault(); skipCut(); }
+  });
+
+  // =====================================================
+  //  STEALTH LOBBY (only if Jason got beat up on the way)
+  //  Sneak past the boss to the elevator. Hide behind pillars.
+  // =====================================================
+  const HURT_LIMIT = 4;
+  let hurt = 0;
+  const STL = {
+    T:20, OX:0, OY:36, COLS:18, NR:23, RANGE:6.2, FOV:0.62,
+    rows:[
+      "##################",
+      "#..............EE#",
+      "#................#",
+      "#..pp........pp..#",
+      "#................#",
+      "#.....DDDDDD.....#",
+      "#................#",
+      "#................#",
+      "#..PP........PP..#",
+      "#..PP........PP..#",
+      "#................#",
+      "#.....SSSSSS.....#",
+      "#................#",
+      "#.PP..........PP.#",
+      "#.PP..........PP.#",
+      "#................#",
+      "#......PP........#",
+      "#......PP........#",
+      "#................#",
+      "#..p..........p..#",
+      "#................#",
+      "#.J..............#",
+      "##################"
+    ],
+    start:{c:2, r:21},
+    bossWps:[[8,4],[15,4],[15,10],[9,10],[4,11],[2,6],[5,12],[10,15],[15,12],[12,19],[5,18],[2,12]],
+    bossWait:[1400,0,900,0,0,1000,0,1200,0,900,0,0]
+  };
+  let SL = null, stCanvas = null;
+  function isStealth(){ return LEVELS[level].laneType === "stealth"; }
+  function stCh(c, r){ return (c < 0 || r < 0 || c >= STL.COLS || r >= STL.NR) ? '#' : STL.rows[r][c]; }
+  function stWalk(c, r){ const ch = stCh(c, r); return ch === '.' || ch === 'J' || ch === 'E'; }
+  function stBlock(c, r){ const ch = stCh(c, r); return ch === '#' || ch === 'P'; }
+  function stXY(x, y){ return { x: STL.OX + x*STL.T, y: STL.OY + y*STL.T }; }   // tile-unit floats -> pixels
+
+  function stPath(c0, r0, c1, r1){
+    const key = (c, r)=> c + "," + r;
+    const prev = {}; prev[key(c0, r0)] = null;
+    const q = [[c0, r0]];
+    while(q.length){
+      const [c, r] = q.shift();
+      if(c === c1 && r === r1) break;
+      for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nc = c + d[0], nr = r + d[1], k = key(nc, nr);
+        if(!stWalk(nc, nr) || (k in prev)) continue;
+        prev[k] = [c, r]; q.push([nc, nr]);
+      }
+    }
+    const out = []; let cur = key(c1, r1);
+    if(!(cur in prev)) return out;
+    let node = [c1, r1];
+    while(node && !(node[0] === c0 && node[1] === r0)){ out.unshift(node); node = prev[key(node[0], node[1])]; }
+    return out;
+  }
+
+  function initStealth(){
+    const w = STL.bossWps[0];
+    SL = {
+      P:{ c:STL.start.c, r:STL.start.r, nc:STL.start.c, nr:STL.start.r, p:0, moving:false },
+      tap:null, held:{u:false,d:false,l:false,r:false}, padUntil:0,
+      B:{ x:w[0] + 0.5, y:w[1] + 0.5, path:[], wp:0, wait:STL.bossWait[0], ang:Math.PI/2, base:Math.PI/2 },
+      sus:0, inv:0, t:0, texts:[], arpT:0, arpI:0, drumT:0, frame:0, stepT:0
+    };
+  }
+  function stSees(bx, by, ang, jx, jy){
+    const dx = jx - bx, dy = jy - by, d = Math.hypot(dx, dy);
+    if(d > STL.RANGE) return false;
+    if(d > 1.1){
+      let da = Math.atan2(dy, dx) - ang;
+      while(da > Math.PI) da -= 2*Math.PI;
+      while(da < -Math.PI) da += 2*Math.PI;
+      if(Math.abs(da) > STL.FOV) return false;
+    }
+    const n = Math.ceil(d/0.2);
+    for(let i=1; i<n; i++){
+      const x = bx + dx*i/n, y = by + dy*i/n;
+      if(stBlock(Math.floor(x), Math.floor(y))) return false;
+    }
+    return true;
+  }
+  function stCaught(){
+    lives--; hurt++;
+    flashTimer = 300;
+    playHitSound("Hey!");
+    const p = stXY(SL.P.c + 0.5, SL.P.r + 0.5);
+    spawnParticles(p.x, p.y, 14, "rgba(255,210,60,0.9)", 2.6, 420);
+    SL.texts.push({ word:"SPOTTED!", t:0, x:Math.max(50, Math.min(310, p.x)), y:p.y - 20 });
+    if(lives <= 0){
+      state = "dead";
+      showOverlay("Busted.", "The boss caught Jason sneaking in. He is now \"in a meeting\" until 5 PM.", "Try Again");
+      return;
+    }
+    livesLabel.textContent = "❤️".repeat(lives);
+    const P = SL.P;
+    P.c = P.nc = STL.start.c; P.r = P.nr = STL.start.r; P.p = 0; P.moving = false;
+    const w = STL.bossWps[0];
+    SL.B = { x:w[0] + 0.5, y:w[1] + 0.5, path:[], wp:0, wait:1500, ang:Math.PI/2, base:Math.PI/2 };
+    SL.sus = 0; SL.inv = 1500; SL.tap = null;
+  }
+  function updateStealth(dt){
+    SL.t += dt;
+    if(SL.inv > 0) SL.inv -= dt;
+    const m = SPD();
+    // ----- Jason (steps tile to tile; hold a direction to keep walking)
+    let sp = 5.2*dt/1000;
+    const P = SL.P;
+    while(sp > 1e-9){
+      if(!P.moving){
+        let d = null;
+        if(SL.tap){ d = SL.tap; SL.tap = null; }
+        else if(SL.held.u) d = [0,-1]; else if(SL.held.d) d = [0,1];
+        else if(SL.held.l) d = [-1,0]; else if(SL.held.r) d = [1,0];
+        if(!d || !stWalk(P.c + d[0], P.r + d[1])) break;
+        P.nc = P.c + d[0]; P.nr = P.r + d[1]; P.p = 0; P.moving = true;
+      }
+      const adv = Math.min(1 - P.p, sp); P.p += adv; sp -= adv;
+      if(P.p >= 1 - 1e-9){
+        P.c = P.nc; P.r = P.nr; P.p = 0; P.moving = false;
+        if(stCh(P.c, P.r) === 'E'){ blip(880, 1320, 0.4, "triangle", 0.12); if(state === "playing") nextLevel(); return; }
+      }
+    }
+    if(P.moving){ SL.stepT += dt; if(SL.stepT > 110){ SL.stepT = 0; SL.frame = 1 - SL.frame; } }
+
+    // ----- boss patrol
+    const B = SL.B;
+    if(B.wait > 0){
+      B.wait -= dt;
+      B.ang = B.base + Math.sin(SL.t/380)*0.9;              // looks around
+    } else {
+      if(!B.path.length){
+        const here = [Math.floor(B.x), Math.floor(B.y)];
+        B.wp = (B.wp + 1) % STL.bossWps.length;
+        const w = STL.bossWps[B.wp];
+        B.path = stPath(here[0], here[1], w[0], w[1]);
+        B.pendingWait = STL.bossWait[B.wp];
+        if(!B.path.length){ B.wait = 300; }
+      }
+      if(B.path.length){
+        const tgt = B.path[0];
+        const tx = tgt[0] + 0.5, ty = tgt[1] + 0.5;
+        const dx = tx - B.x, dy = ty - B.y, dist = Math.hypot(dx, dy);
+        const step = 2.4*m*dt/1000;
+        const want = Math.atan2(dy, dx);
+        let da = want - B.ang;
+        while(da > Math.PI) da -= 2*Math.PI;
+        while(da < -Math.PI) da += 2*Math.PI;
+        B.ang += Math.max(-4*dt/1000, Math.min(4*dt/1000, da));
+        B.base = B.ang;
+        if(dist <= step){ B.x = tx; B.y = ty; B.path.shift(); if(!B.path.length){ B.wait = B.pendingWait || 0; } }
+        else { B.x += dx/dist*step; B.y += dy/dist*step; }
+      }
+    }
+
+    // ----- detection
+    const jx = P.c + (P.nc - P.c)*P.p + 0.5, jy = P.r + (P.nr - P.r)*P.p + 0.5;
+    const seen = SL.inv <= 0 && stSees(B.x, B.y, B.ang, jx, jy);
+    SL.seen = seen;
+    if(seen) SL.sus += dt/650; else SL.sus -= dt/1500;
+    SL.sus = Math.max(0, Math.min(1, SL.sus));
+    if(SL.sus >= 1 && state === "playing"){ stCaught(); return; }
+
+    // ----- tension music: minor (A-C-E) pulse + heartbeat drum that speeds up near danger
+    SL.arpT += dt; SL.drumT += dt;
+    if(SL.arpT > 420){ SL.arpT = 0; const notes = [110, 130.81, 164.81, 130.81]; blip(notes[SL.arpI++ % 4], undefined, 0.38, "triangle", 0.05 + SL.sus*0.05); }
+    const beat = 900 - SL.sus*520;
+    if(SL.drumT > beat){ SL.drumT = 0; blip(70, 38, 0.16, "sine", 0.2); setTimeout(()=>blip(60, 36, 0.12, "sine", 0.14), 130); }
+
+    for(const t of SL.texts) t.t += dt;
+    SL.texts = SL.texts.filter(t=>t.t < 1000);
+  }
+
+  function buildStealthCanvas(){
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = "#0b0a12"; g.fillRect(0, 0, W, H);
+    const T = STL.T;
+    for(let r=0; r<STL.NR; r++){
+      for(let col=0; col<STL.COLS; col++){
+        const x = STL.OX + col*T, y = STL.OY + r*T, ch = STL.rows[r][col];
+        if(ch === '#'){
+          g.fillStyle = "#2a2838"; g.fillRect(x, y, T, T);
+          g.fillStyle = "#3a3750"; g.fillRect(x, y, T, 3);
+          g.fillStyle = "#1a1826"; g.fillRect(x, y+T-3, T, 3);
+          continue;
+        }
+        g.fillStyle = ((r+col)%2) ? "#6a6676" : "#625e6e"; g.fillRect(x, y, T, T);
+        g.fillStyle = "rgba(255,255,255,0.05)"; g.fillRect(x, y, T, 1); g.fillRect(x, y, 1, T);
+      }
+    }
+    for(let r=0; r<STL.NR; r++){
+      for(let col=0; col<STL.COLS; col++){
+        const x = STL.OX + col*T, y = STL.OY + r*T, ch = STL.rows[r][col];
+        if(ch === 'P'){
+          g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x+2, y+3, T, T);
+          g.fillStyle = "#d8d4e4"; g.fillRect(x, y, T, T);
+          g.fillStyle = "#f2f0fa"; g.fillRect(x, y, T, 3); g.fillRect(x, y, 3, T);
+          g.fillStyle = "#a9a5bc"; g.fillRect(x, y+T-3, T, 3); g.fillRect(x+T-3, y, 3, T);
+        } else if(ch === 'D'){
+          g.fillStyle = "#4a2a14"; g.fillRect(x, y+3, T, T-3);
+          g.fillStyle = "#8a5a30"; g.fillRect(x, y, T, T-5);
+          g.fillStyle = "#a87444"; g.fillRect(x, y, T, 3);
+        } else if(ch === 'S'){
+          g.fillStyle = "#6a2430"; g.fillRect(x, y+2, T, T-4);
+          g.fillStyle = "#a03a48"; g.fillRect(x+1, y+3, T-2, T-9);
+          g.fillStyle = "#c25666"; g.fillRect(x+1, y+3, T-2, 2);
+        } else if(ch === 'p'){
+          g.fillStyle = "#6a3a20"; g.fillRect(x+4, y+11, 12, 8);
+          g.fillStyle = "#2f8a4a"; g.fillRect(x+2, y+3, 16, 10);
+          g.fillStyle = "#4ec26a"; g.fillRect(x+5, y+1, 10, 8);
+        } else if(ch === 'E'){
+          g.fillStyle = "#8d94a6"; g.fillRect(x, y, T, T);
+          g.fillStyle = "#c3c9d8"; g.fillRect(x+1, y+2, T-2, T-4);
+          g.fillStyle = "#6a7080"; g.fillRect(x+T-1, y+2, 1, T-4);
+        }
+      }
+    }
+    // labels
+    g.textAlign = "center"; g.font = "bold 8px monospace";
+    g.fillStyle = "#2ecc71"; g.fillRect(14*T + 6, 36 + 1, 28, 0);
+    g.fillStyle = "#ffe36b"; g.fillText("RECEPTION", 9*T, 36 + 5*T + 12);
+    g.fillStyle = "#cfd6ff"; g.fillText("ENTRANCE", 2.5*T, 36 + 22*T - 4);
+    return c;
+  }
+
+  function drawStealthScene(now){
+    if(!stCanvas) stCanvas = buildStealthCanvas();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(stCanvas, 0, 0);
+    const T = STL.T, B = SL.B, P = SL.P;
+    // elevator glow + label
+    const pulse = 0.5 + 0.5*Math.sin(now/200);
+    const ep = stXY(15, 1.5);
+    ctx.fillStyle = "rgba(80,255,140," + (0.12 + 0.12*pulse) + ")";
+    ctx.beginPath(); ctx.arc(ep.x, ep.y, 30, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#2ecc71"; ctx.font = "bold 9px monospace"; ctx.textAlign = "center";
+    ctx.fillText("ELEVATOR ▲", ep.x, 36 + 2*T + 10);
+
+    // boss vision cone (blocked by walls and pillars)
+    const bp = stXY(B.x, B.y);
+    const alert = SL.sus;
+    ctx.beginPath(); ctx.moveTo(bp.x, bp.y);
+    for(let a = B.ang - STL.FOV; a <= B.ang + STL.FOV + 0.001; a += 0.05){
+      let rr = 0.2;
+      for(; rr < STL.RANGE; rr += 0.12){
+        if(stBlock(Math.floor(B.x + Math.cos(a)*rr), Math.floor(B.y + Math.sin(a)*rr))) break;
+      }
+      const q = stXY(B.x + Math.cos(a)*rr, B.y + Math.sin(a)*rr);
+      ctx.lineTo(q.x, q.y);
+    }
+    ctx.closePath();
+    const gr = ctx.createRadialGradient(bp.x, bp.y, 4, bp.x, bp.y, STL.RANGE*T);
+    const col = alert > 0.25 ? "255,70,60" : "255,225,110";
+    gr.addColorStop(0, "rgba(" + col + "," + (0.42 + 0.3*alert) + ")");
+    gr.addColorStop(1, "rgba(" + col + ",0.06)");
+    ctx.fillStyle = gr; ctx.fill();
+
+    // Jason
+    const jp = stXY(P.c + (P.nc - P.c)*P.p + 0.5, P.r + (P.nr - P.r)*P.p + 0.5);
+    const blink = SL.inv > 0 && Math.floor(SL.inv/80) % 2 === 0;
+    if(!blink){
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(jp.x - 8, jp.y + 8, 16, 4);
+      ctx.drawImage(spriteFrames[SL.frame], jp.x - 11, jp.y - 13, 22, 22);
+    }
+    // the boss
+    drawCoworker({ def:GHOSTS[0], dx:Math.sign(Math.round(Math.cos(B.ang))), dy:Math.sign(Math.round(Math.sin(B.ang))) }, bp.x, bp.y, now);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+    ctx.strokeText("BOSS", bp.x, bp.y - 16); ctx.fillText("BOSS", bp.x, bp.y - 16);
+    if(alert > 0.2){
+      ctx.font = "bold 16px sans-serif";
+      const mark = alert > 0.55 ? "!" : "?";
+      ctx.strokeText(mark, bp.x, bp.y - 26); ctx.fillStyle = alert > 0.55 ? "#ff4a4a" : "#ffe36b"; ctx.fillText(mark, bp.x, bp.y - 26);
+    }
+    // moody vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, 120, W/2, H/2, 330);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,12,0.55)");
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+    // status strip
+    ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 498, W, 22);
+    ctx.font = "bold 9px monospace"; ctx.textAlign = "left"; ctx.fillStyle = "#cfd6ff";
+    ctx.fillText("REACH THE ELEVATOR", 8, 512);
+    ctx.textAlign = "right"; ctx.fillStyle = alert > 0.55 ? "#ff6a6a" : "#ffe36b";
+    ctx.fillText("SUSPICION", 258, 512);
+    ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(264, 505, 88, 7);
+    ctx.fillStyle = alert > 0.55 ? "#ff4a4a" : "#ffe36b"; ctx.fillRect(264, 505, 88*alert, 7);
+
+    for(const t of SL.texts){
+      ctx.save();
+      ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center";
+      ctx.globalAlpha = 1 - t.t/1000;
+      ctx.strokeStyle = "#000"; ctx.lineWidth = 4;
+      ctx.strokeText(t.word, t.x, t.y - t.t*0.03); ctx.fillStyle = "#ff6a6a"; ctx.fillText(t.word, t.x, t.y - t.t*0.03);
+      ctx.restore();
+    }
+    if(SL.t < 5500 && state === "playing"){
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (5500 - SL.t)/700);
+      ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(14, 232, 332, 62);
+      ctx.font = "bold 11px monospace"; ctx.textAlign = "center";
+      ctx.fillStyle = "#ffe36b"; ctx.fillText("SNEAK TO THE ELEVATOR.", W/2, 252);
+      ctx.fillStyle = "#fff"; ctx.fillText("STAY OUT OF THE BOSS'S VIEW.", W/2, 268);
+      ctx.fillStyle = "#9ecbff"; ctx.fillText("HIDE BEHIND THE PILLARS.", W/2, 284);
+      ctx.restore();
+    }
+    if(flashTimer > 0){ ctx.fillStyle = "rgba(255,60,60," + (0.25*flashTimer/300) + ")"; ctx.fillRect(0, 0, W, H); }
+    ctx.textAlign = "start";
+  }
+
+  // held-direction controls for the stealth stage
+  const ST_KEYS = { ArrowUp:"u", w:"u", W:"u", ArrowDown:"d", s:"d", S:"d", ArrowLeft:"l", a:"l", A:"l", ArrowRight:"r", d:"r", D:"r" };
+  window.addEventListener('keydown', (e)=>{ const k = ST_KEYS[e.key]; if(k && SL) SL.held[k] = true; });
+  window.addEventListener('keyup', (e)=>{ const k = ST_KEYS[e.key]; if(k && SL){ SL.held[k] = false; SL.tap = null; } });
+  window.addEventListener('blur', ()=>{ if(SL){ SL.held = {u:false,d:false,l:false,r:false}; SL.tap = null; } });
+  [['up','u'],['down','d'],['left','l'],['right','r']].forEach(([id,k])=>{
+    const el = document.getElementById(id);
+    el.addEventListener('pointerdown', ()=>{ if(SL && isStealth()){ SL.held[k] = true; SL.tap = ({u:[0,-1],d:[0,1],l:[-1,0],r:[1,0]})[k]; } });
+    ['pointerup','pointerleave','pointercancel'].forEach(ev=>el.addEventListener(ev, ()=>{
+      if(SL){ if(SL.held[k]) SL.padUntil = performance.now() + 350; SL.held[k] = false; SL.tap = null; }
+    }));
   });
 
   // =====================================================
